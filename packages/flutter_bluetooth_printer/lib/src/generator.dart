@@ -27,25 +27,6 @@ class Generator {
     return res;
   }
 
-  List<int> _imageRaster(img.Image image) {
-    final int widthPx = image.width;
-    final int heightPx = image.height;
-    final int widthBytes = (widthPx + 7) ~/ 8;
-    final List<int> resterizedData = _toRasterFormat(image);
-    const int densityByte = 0;
-    final List<int> header = <int>[
-      ...cRasterImg2.codeUnits,
-    ];
-    header.add(densityByte);
-    header.addAll(_intLowHigh(widthBytes, 2)); // xL xH
-    header.addAll(_intLowHigh(heightPx, 2)); // yL yH
-
-    return <int>[
-      ...header,
-      ...resterizedData,
-    ];
-  }
-
   Future<List<int>> rasterImage({
     required Uint8List bytes,
     required int dotsPerLine,
@@ -81,32 +62,6 @@ class Generator {
     return <int>[
       ...header,
       ...list,
-    ];
-  }
-
-  List<int> _graphic(img.Image image) {
-    final int widthPx = image.width;
-    final int heightPx = image.height;
-    final int widthBytes = (widthPx + 7) ~/ 8;
-    final List<int> resterizedData = _toRasterFormat(image);
-    // 'GS ( L' - FN_112 (Image data)
-    final List<int> header1 = List.from(cRasterImg.codeUnits);
-    header1.addAll(_intLowHigh(widthBytes * heightPx + 10, 2)); // pL pH
-    header1.addAll([48, 112, 48]); // m=48, fn=112, a=48
-    header1.addAll([1, 1]); // bx=1, by=1
-    header1.addAll([49]); // c=49
-    header1.addAll(_intLowHigh(widthBytes, 2)); // xL xH
-    header1.addAll(_intLowHigh(heightPx, 2)); // yL yH
-
-    // 'GS ( L' - FN_50 (Run print)
-    final List<int> header2 = List.from("\x1D(L".codeUnits);
-    header2.addAll([2, 0]); // pL pH
-    header2.addAll([48, 50]); // m fn[2,50]
-
-    return <int>[
-      ...header1,
-      ...resterizedData,
-      ...header2,
     ];
   }
 
@@ -204,23 +159,6 @@ class Generator {
     return src;
   }
 
-  Future<List<int>> _encodeImage(Map<String, dynamic> arg) async {
-    final dotsPerLine = arg['dotsPerLine'];
-    final pngBytes = arg['bytes'];
-    final useImageRaster = arg['useImageRaster'];
-
-    final image = await optimizeImage(
-      dotsPerLine: dotsPerLine,
-      bytes: pngBytes,
-    );
-
-    if (useImageRaster) {
-      return _imageRaster(image);
-    }
-
-    return _image(image);
-  }
-
   Future<List<int>> _encodeX(Map<String, dynamic> arg) async {
     final dotsPerLine = arg['dotsPerLine'];
     final pngBytes = arg['bytes'];
@@ -243,96 +181,5 @@ class Generator {
     };
 
     return compute(_encodeX, arg);
-  }
-
-  List<int> _image(
-    img.Image imgSrc, {
-    bool highDensityHorizontal = true,
-    bool highDensityVertical = true,
-  }) {
-    List<int> bytes = [];
-
-    final img.Image image = img.Image.from(imgSrc); // make a copy
-    img.invert(image);
-    // flip(image, Flip.horizontal);
-    img.flip(image, direction: img.FlipDirection.horizontal);
-    // final Image imageRotated = copyRotate(image, 270);
-    final img.Image imageRotated = img.copyRotate(
-      image,
-      angle: 270,
-      interpolation: img.Interpolation.nearest,
-    );
-
-    final int lineHeight = highDensityVertical ? 3 : 1;
-
-    /// const int lineHeight = 3;
-    final List<List<int>> blobs = _toColumnFormat(imageRotated, lineHeight * 8);
-
-    // Compress according to line density
-    // Line height contains 8 or 24 pixels of src image
-    // Each blobs[i] contains greyscale bytes [0-255]
-    // const int pxPerLine = 24 ~/ lineHeight;
-    for (int blobInd = 0; blobInd < blobs.length; blobInd++) {
-      blobs[blobInd] = _packBitsIntoBytes(blobs[blobInd]);
-    }
-
-    final int heightPx = imageRotated.height;
-    final int densityByte =
-        (highDensityHorizontal ? 1 : 0) + (highDensityVertical ? 32 : 0);
-
-    final List<int> header = List.from(cBitImg.codeUnits);
-    header.add(densityByte);
-    header.addAll(_intLowHigh(heightPx, 2));
-
-    // Image alignment
-    bytes += latin1.encode(cAlignCenter);
-
-    // Adjust line spacing (for 16-unit line feeds): ESC 3 0x10 (HEX: 0x1b 0x33 0x10)
-    bytes += [27, 51, 16];
-    for (int i = 0; i < blobs.length; ++i) {
-      bytes += List.from(header)
-        ..addAll(blobs[i])
-        ..addAll('\n'.codeUnits);
-    }
-    // Reset line spacing: ESC 2 (HEX: 0x1b 0x32)
-    bytes += [27, 50];
-    return bytes;
-  }
-
-  /// Extract slices of an image as equal-sized blobs of column-format data.
-  ///
-  /// [image] Image to extract from
-  /// [lineHeight] Printed line height in dots
-  List<List<int>> _toColumnFormat(img.Image imgSrc, int lineHeight) {
-    final img.Image image = img.Image.from(imgSrc); // make a copy
-
-    // Determine new width: closest integer that is divisible by lineHeight
-    final int widthPx = (image.width + lineHeight) - (image.width % lineHeight);
-    final int heightPx = image.height;
-
-    /// Create a black bottom layer
-    final biggerImage = copyResize(image, width: widthPx, height: heightPx);
-
-    // fill(biggerImage, 0)
-    fill(biggerImage, color: ColorFloat16(0));
-
-    /// Insert source image into bigger one
-    // drawImage(biggerImage, image, dstX: 0, dstY: 0);
-    compositeImage(biggerImage, image, dstX: 0, dstY: 0);
-
-    int left = 0;
-    final List<List<int>> blobs = [];
-
-    while (left < widthPx) {
-      // final Image slice = copyCrop(biggerImage, left, 0, lineHeight, heightPx);
-      final img.Image slice = copyCrop(biggerImage,
-          x: left, y: 0, width: lineHeight, height: heightPx);
-      // final Uint8List bytes = slice.getBytes(  format: Format.luminance);
-      final Uint8List bytes = slice.getBytes(order: ChannelOrder.bgr);
-      blobs.add(bytes);
-      left += lineHeight;
-    }
-
-    return blobs;
   }
 }

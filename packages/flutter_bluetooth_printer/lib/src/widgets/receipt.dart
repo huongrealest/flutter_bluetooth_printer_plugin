@@ -180,19 +180,3 @@ class ReceiptState extends State<Receipt> {
   }
 }
 
-class _ImagePreviewForDebug extends StatelessWidget {
-  final Uint8List bytes;
-  const _ImagePreviewForDebug({
-    required this.bytes,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Image Preview'),
-      ),
-      body: Image.memory(bytes),
-    );
-  }
-}

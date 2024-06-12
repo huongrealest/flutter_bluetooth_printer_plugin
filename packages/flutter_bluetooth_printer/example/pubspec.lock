@@ -93,13 +93,6 @@ packages:
       relative: true
     source: path
     version: "2.16.10"
-  flutter_bluetooth_printer_macos:
-    dependency: "direct overridden"
-    description:
-      path: "../../flutter_bluetooth_printer_macos"
-      relative: true
-    source: path
-    version: "1.3.0"
   flutter_bluetooth_printer_platform_interface:
     dependency: "direct overridden"
     description:
